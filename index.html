@@ -2,140 +2,131 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ระบบเช็คชื่อ QR</title>
-
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-
-<!-- QR Scanner -->
 <script src="https://unpkg.com/html5-qrcode"></script>
-
-<!-- QR Generator -->
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"></script>
-
 <style>
-body{font-family:sans-serif;background:#f4f6f8;padding:10px}
-.card{background:#fff;padding:15px;margin:10px auto;max-width:420px;border-radius:10px}
-input,select,button{width:100%;padding:8px;margin:5px 0}
-button{background:#0066ff;color:#fff;border:none;border-radius:6px}
+body{font-family:sans-serif;background:#f4f6f8;padding:20px}
+.box{background:#fff;padding:15px;border-radius:10px;margin-bottom:15px}
+button{padding:6px 12px;margin:5px}
+input,select{padding:5px;margin:5px}
 .hidden{display:none}
-.idcard{border:2px solid #000;padding:10px;text-align:center}
 </style>
 </head>
 <body>
 
-<h2 align="center">ระบบเช็คชื่อ QR</h2>
+<h2 id="schoolName">🏫 โรงเรียนตัวอย่าง</h2>
+<img id="schoolLogo" src="" height="60">
 
-<select onchange="show(this.value)">
-<option value="">เลือกระบบ</option>
-<option value="student">นักเรียน</option>
-<option value="teacher">ครู</option>
-<option value="admin">หลังบ้าน</option>
-</select>
+<div class="box">
+<button onclick="show('student')">นักเรียน</button>
+<button onclick="show('teacher')">ครู</button>
+<button onclick="show('admin')">หลังบ้าน</button>
+</div>
 
 <!-- นักเรียน -->
-<div id="student" class="card hidden">
-<h3>นักเรียน</h3>
-<input id="sid" placeholder="รหัสนักเรียน">
-<button onclick="viewStudent()">ดูประวัติ</button>
-<div id="sdata"></div>
+<div id="student" class="box hidden">
+<h3>ระบบนักเรียน</h3>
+<input id="stuId" placeholder="รหัสนักเรียน">
+<button onclick="studentLogin()">เข้า</button>
+<div id="stuArea"></div>
 </div>
 
 <!-- ครู -->
-<div id="teacher" class="card hidden">
-<h3>ครู</h3>
-<button onclick="startScan()">📷 สแกน QR</button>
-<select id="status">
-<option>มา</option>
-<option>มาสาย</option>
-<option>ขาด</option>
-<option>ลากิจ</option>
-<option>ลาป่วย</option>
-</select>
-<div id="reader"></div>
+<div id="teacher" class="box hidden">
+<h3>ระบบครู</h3>
+<input id="tUser" placeholder="ชื่อครู">
+<input id="tPass" placeholder="รหัสผ่าน">
+<button onclick="teacherLogin()">เข้า</button>
+<div id="teacherArea"></div>
 </div>
 
-<!-- หลังบ้าน -->
-<div id="admin" class="card hidden">
-<h3>หลังบ้าน</h3>
-<input id="apass" placeholder="รหัสแอดมิน">
-<button onclick="loginAdmin()">เข้า</button>
-
-<div id="apanel" class="hidden">
-<hr>
-<input id="nsid" placeholder="รหัสนักเรียน">
-<input id="nsname" placeholder="ชื่อ-สกุล">
-<button onclick="addStudent()">➕ เพิ่มนักเรียน</button>
-
-<div class="idcard">
-<h4 id="cname"></h4>
-<div id="qrcode"></div>
-</div>
-</div>
+<!-- Admin -->
+<div id="admin" class="box hidden">
+<h3>ระบบหลังบ้าน</h3>
+<input id="adminPass" placeholder="รหัสผ่าน">
+<button onclick="adminLogin()">เข้า</button>
+<div id="adminArea"></div>
 </div>
 
 <script>
-/* 🔴 ใส่ firebaseConfig ของออยตรงนี้ */
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID"
-};
+let db = JSON.parse(localStorage.getItem("db")) || {
+ school:"โรงเรียนตัวอย่าง",
+ logo:"",
+ students:{},
+ teachers:{},
+ subjects:{},
+ attendance:[]
+}
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+function save(){localStorage.setItem("db",JSON.stringify(db))}
 
-/* UI */
 function show(id){
-["student","teacher","admin"].forEach(e=>document.getElementById(e).classList.add("hidden"))
-if(id) document.getElementById(id).classList.remove("hidden")
+["student","teacher","admin"].forEach(x=>document.getElementById(x).classList.add("hidden"))
+document.getElementById(id).classList.remove("hidden")
+}
+
+document.getElementById("schoolName").innerText="🏫 "+db.school
+document.getElementById("schoolLogo").src=db.logo
+
+/* นักเรียน */
+function studentLogin(){
+let id=stuId.value
+let s=db.students[id]
+if(!s){alert("ไม่พบนักเรียน");return}
+stuArea.innerHTML=`
+<p>ชื่อ: ${s.name}</p>
+<div id="qrcode"></div>
+<h4>ประวัติ</h4>
+<ul>${db.attendance.filter(a=>a.sid==id).map(a=>`<li>${a.sub} : ${a.status}</li>`).join("")}</ul>`
+new QRCode(document.getElementById("qrcode"), id)
+}
+
+/* ครู */
+function teacherLogin(){
+let t=db.teachers[tUser.value]
+if(!t||t.pass!=tPass.value){alert("เข้าไม่ได้");return}
+teacherArea.innerHTML=`
+<select id="sub">${Object.keys(db.subjects).map(s=>`<option>${s}</option>`)}</select>
+<div id="reader" style="width:300px"></div>
+<button onclick="startScan()">เริ่มสแกน</button>
+<div id="result"></div>`
+}
+
+function startScan(){
+let qr=new Html5Qrcode("reader")
+qr.start({facingMode:"environment"},{fps:10},txt=>{
+qr.stop()
+let st=prompt("สถานะ: มา / สาย / ขาด / ลากิจ / ลาป่วย")
+db.attendance.push({sid:txt,sub:sub.value,status:st})
+save()
+result.innerHTML="บันทึกแล้ว"
+})
 }
 
 /* Admin */
-function loginAdmin(){
-if(apass.value!="1669") return alert("รหัสผิด");
-apanel.classList.remove("hidden")
-}
+function adminLogin(){
+if(adminPass.value!="1669"){alert("รหัสผิด");return}
+adminArea.innerHTML=`
+<h4>ตั้งค่าโรงเรียน</h4>
+<input placeholder="ชื่อโรงเรียน" onchange="db.school=this.value;save();location.reload()">
+<input placeholder="ลิงก์โลโก้" onchange="db.logo=this.value;save();location.reload()">
 
-async function addStudent(){
-await db.collection("students").doc(nsid.value).set({
-name:nsname.value,
-log:[]
-});
-document.getElementById("cname").innerText = nsname.value;
-document.getElementById("qrcode").innerHTML="";
-new QRCode("qrcode", nsid.value);
-alert("เพิ่มนักเรียน + สร้างบัตรแล้ว");
-}
+<h4>เพิ่มนักเรียน</h4>
+<input id="sid" placeholder="รหัส">
+<input id="sname" placeholder="ชื่อ">
+<button onclick="db.students[sid.value]={name:sname.value};save()">เพิ่ม</button>
 
-/* Student */
-async function viewStudent(){
-const doc = await db.collection("students").doc(sid.value).get();
-if(!doc.exists) return alert("ไม่พบข้อมูล");
-let d = doc.data();
-sdata.innerHTML = "<b>"+d.name+"</b><br>"+d.log.map(l=>`${l.date} : ${l.status}`).join("<br>");
-}
+<h4>เพิ่มครู</h4>
+<input id="tname" placeholder="ชื่อครู">
+<input id="tpass" placeholder="รหัส">
+<button onclick="db.teachers[tname.value]={pass:tpass.value};save()">เพิ่ม</button>
 
-/* Teacher QR Scan */
-function startScan(){
-const qr = new Html5Qrcode("reader");
-qr.start({ facingMode: "environment" },{}, async (text)=>{
-let ref = db.collection("students").doc(text);
-let doc = await ref.get();
-if(!doc.exists){alert("ไม่พบนักเรียน");return}
-let data = doc.data();
-data.log.push({
-date:new Date().toLocaleString(),
-status:status.value
-});
-await ref.update({log:data.log});
-alert("บันทึกแล้ว");
-qr.stop();
-});
+<h4>เพิ่มรายวิชา</h4>
+<input id="subj">
+<button onclick="db.subjects[subj.value]=true;save()">เพิ่ม</button>
+`
 }
 </script>
-
 </body>
 </html>
