@@ -4,268 +4,127 @@
 <meta charset="UTF-8">
 <title>ระบบเช็คชื่อ QR โรงเรียน</title>
 
-<script src="https://unpkg.com/html5-qrcode"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<!-- QR -->
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"></script>
 
 <style>
-body{
-  font-family:sans-serif;
-  background:linear-gradient(135deg,#ede7f6,#d1c4e9);
-  padding:20px
-}
-.box{
-  background:#fff;
-  padding:15px;
-  border-radius:16px;
-  margin-bottom:15px;
-  box-shadow:0 8px 20px rgba(0,0,0,.15)
-}
-button{
-  padding:8px 16px;
-  margin:5px;
-  border:none;
-  border-radius:12px;
-  background:#7e57c2;
-  color:#fff;
-  cursor:pointer
-}
-input,select{
-  padding:7px;
-  margin:5px;
-  border-radius:10px;
-  border:1px solid #bbb
-}
-.hidden{display:none}
-img{border-radius:12px}
-
-/* บัตร */
-.card{
-  width:330px;
-  background:linear-gradient(135deg,#7e57c2,#ede7f6);
-  border-radius:22px;
-  padding:15px
-}
-.card-inner{
-  background:#fff;
-  border-radius:18px;
-  padding:12px;
-  text-align:center
-}
-.photo{
-  width:100px;height:120px;
-  object-fit:cover;
-  border-radius:12px;
-  border:3px solid #7e57c2
-}
+body{font-family:sans-serif;background:#f3e8ff;color:#4b006e}
+.box{background:#fff;padding:15px;margin:10px;border-radius:10px}
+button{padding:8px;margin:4px;background:#7c3aed;color:#fff;border:none;border-radius:6px}
+input{padding:6px;margin:4px}
+.hide{display:none}
 </style>
 </head>
-
 <body>
 
-<h2 id="schoolName">🏫 โรงเรียน</h2>
-<img id="schoolLogo" height="60">
+<h1>📚 ระบบเช็คชื่อ QR</h1>
 
+<!-- ====== เลือกระบบ ====== -->
 <div class="box">
-  <button onclick="show('student')">นักเรียน</button>
-  <button onclick="show('teacher')">ครู</button>
-  <button onclick="show('admin')">หลังบ้าน</button>
+<button onclick="show('admin')">หลังบ้าน</button>
+<button onclick="show('teacher')">ครู</button>
+<button onclick="show('student')">นักเรียน</button>
 </div>
 
-<!-- นักเรียน -->
-<div id="student" class="box hidden">
-<h3>ระบบนักเรียน</h3>
-<input id="stuId" placeholder="รหัสนักเรียน" inputmode="numeric">
-<button onclick="studentLogin()">เข้า</button>
-<div id="stuArea"></div>
+<!-- ====== หลังบ้าน ====== -->
+<div id="admin" class="box hide">
+<h2>🛠 หลังบ้าน</h2>
+<input id="adminPass" placeholder="รหัสหลังบ้าน">
+<button onclick="loginAdmin()">เข้า</button>
+
+<div id="adminPanel" class="hide">
+<h3>ประวัติการเข้าเรียน</h3>
+<ul id="history"></ul>
+</div>
 </div>
 
-<!-- ครู -->
-<div id="teacher" class="box hidden">
-<h3>ระบบครู</h3>
-<input id="tUser" placeholder="ชื่อครู">
-<input id="tPass" placeholder="รหัสผ่าน" inputmode="numeric">
-<button onclick="teacherLogin()">เข้า</button>
-<div id="teacherArea"></div>
+<!-- ====== ครู ====== -->
+<div id="teacher" class="box hide">
+<h2>👨‍🏫 ระบบครู</h2>
+<input id="subject" placeholder="ชื่อวิชา">
+<button onclick="createQR()">สร้าง QR (5 นาที)</button>
+<div id="qrcode"></div>
 </div>
 
-<!-- Admin -->
-<div id="admin" class="box hidden">
-<h3>ระบบหลังบ้าน</h3>
-<input id="adminPass" placeholder="รหัสผ่าน" inputmode="numeric">
-<button onclick="adminLogin()">เข้า</button>
-<div id="adminArea"></div>
+<!-- ====== นักเรียน ====== -->
+<div id="student" class="box hide">
+<h2>🧑‍🎓 นักเรียน</h2>
+<input id="sname" placeholder="ชื่อ">
+<input id="sclass" placeholder="ชั้น/ห้อง"><br>
+<button onclick="checkIn(false)">มา</button>
+<button onclick="checkIn(true)">สาย</button>
 </div>
 
 <script>
-let db = JSON.parse(localStorage.getItem("db")) || {
-  school:"โรงเรียนตัวอย่าง",
-  logo:"",
-  students:{},
-  teachers:{},
-  subjects:{},
-  attendance:[]
-}
-function save(){localStorage.setItem("db",JSON.stringify(db))}
+/* ===== Firebase config ===== */
+firebase.initializeApp({
+  apiKey: "AIzaSyD19ffZKxxXfWj9sseK66LCCVEWqGNqPPI",
+  authDomain: "appsk-7f523.firebaseapp.com",
+  projectId: "appsk-7f523"
+});
+const db = firebase.firestore();
 
-schoolName.innerText="🏫 "+db.school
-schoolLogo.src=db.logo
-
+/* ===== ฟังก์ชันทั่วไป ===== */
 function show(id){
-  ["student","teacher","admin"].forEach(x=>document.getElementById(x).classList.add("hidden"))
-  document.getElementById(id).classList.remove("hidden")
+  document.querySelectorAll('.box').forEach(b=>b.classList.add('hide'));
+  document.getElementById(id).classList.remove('hide');
 }
 
-/* ===== นักเรียน ===== */
-function studentLogin(){
-  let s=db.students[stuId.value]
-  if(!s){alert("ไม่พบนักเรียน");return}
-  alert("เข้าระบบนักเรียนแล้ว")
+/* ===== หลังบ้าน ===== */
+function loginAdmin(){
+  if(adminPass.value==="1669"){
+    adminPanel.classList.remove("hide");
+    loadHistory();
+    alert("เข้าแล้ว");
+  }else alert("รหัสผิด");
+}
 
-  stuArea.innerHTML=`
-  <div class="card">
-    <div class="card-inner">
-      <img src="${db.logo}" height="40"><br>
-      <small>${db.school}</small><hr>
-      <img class="photo" src="${s.photo||''}">
-      <h3>${s.name}</h3>
-      <div>ม.${s.level}/${s.room}</div>
-      <div>รหัส ${stuId.value}</div>
-      <div id="qrcode"></div>
-    </div>
-  </div>
-
-  <h4>ประวัติการมาเรียน</h4>
-  <ul>
-  ${db.attendance.filter(a=>a.sid==stuId.value)
-    .map(a=>`<li>${a.date} | ${a.sub} : มา</li>`).join("")}
-  </ul>
-  `
-  new QRCode(document.getElementById("qrcode"),stuId.value)
+function loadHistory(){
+  db.collection("attendance").orderBy("time","desc")
+  .onSnapshot(snap=>{
+    history.innerHTML="";
+    snap.forEach(d=>{
+      const x=d.data();
+      history.innerHTML+=`<li>${x.name} | ${x.class} | ${x.subject} | ${x.late?"สาย":"มา"}</li>`;
+    });
+  });
 }
 
 /* ===== ครู ===== */
-function teacherLogin(){
-  let t=db.teachers[tUser.value]
-  if(!t||t.pass!=tPass.value){alert("เข้าไม่ได้");return}
-  alert("เข้าระบบครูแล้ว")
+function createQR(){
+  const exp = Date.now()+5*60*1000;
+  db.collection("activeQR").doc("current").set({
+    subject:subject.value,
+    expire:exp
+  });
 
-  teacherArea.innerHTML=`
-  <select id="sub">${Object.keys(db.subjects).map(s=>`<option>${s}</option>`).join("")}</select>
-  <select id="level">${[1,2,3,4,5,6].map(i=>`<option>${i}</option>`).join("")}</select>
-  <select id="room">${[1,2,3,4,5].map(i=>`<option>${i}</option>`).join("")}</select>
-
-  <div id="reader" style="width:280px"></div>
-  <button onclick="startScan()">เริ่มสแกน</button>
-  <div id="result"></div>
-  `
+  qrcode.innerHTML="";
+  new QRCode(qrcode,"ACTIVE");
+  alert("สร้าง QR แล้ว");
 }
 
-function startScan(){
-  let qr=new Html5Qrcode("reader")
-  let today=new Date().toISOString().slice(0,10)
+/* ===== นักเรียน ===== */
+async function checkIn(late){
+  const qr = await db.collection("activeQR").doc("current").get();
+  if(!qr.exists) return alert("ไม่มี QR");
 
-  qr.start({facingMode:"environment"},{fps:10},txt=>{
-    let s=db.students[txt]
-    if(!s){alert("ไม่พบนักเรียน");return}
+  const d=qr.data();
+  if(Date.now()>d.expire) return alert("QR หมดอายุ");
 
-    if(s.level!=level.value||s.room!=room.value){
-      alert("นักเรียนไม่ตรงชั้น/ห้อง");return
-    }
+  db.collection("attendance").add({
+    name:sname.value,
+    class:sclass.value,
+    subject:d.subject,
+    late:late,
+    time:firebase.firestore.FieldValue.serverTimestamp()
+  });
 
-    let already=db.attendance.find(a=>
-      a.sid==txt && a.sub==sub.value && a.date==today
-    )
-    if(already){
-      alert(`${s.name} เช็คชื่อแล้ว`)
-      return
-    }
-
-    db.attendance.push({
-      sid:txt,
-      name:s.name,
-      level:s.level,
-      room:s.room,
-      sub:sub.value,
-      date:today
-    })
-    save()
-
-    alert(`✅ ${s.name}\nม.${s.level}/${s.room} มาเรียนแล้ว`)
-  })
+  alert("เช็คชื่อแล้ว");
 }
-
-/* ===== Admin ===== */
-function adminLogin(){
-  if(adminPass.value!="1669"){alert("รหัสผิด");return}
-  alert("เข้าระบบหลังบ้านแล้ว")
-
-  let today=new Date().toISOString().slice(0,10)
-
-  adminArea.innerHTML=`
-  <h4>ตั้งค่าโรงเรียน</h4>
-  <input placeholder="ชื่อโรงเรียน" onchange="db.school=this.value;save();location.reload()">
-  <input placeholder="โลโก้ URL" onchange="db.logo=this.value;save();location.reload()">
-
-  <h4>เพิ่มนักเรียน</h4>
-  <input id="sid" placeholder="รหัส" inputmode="numeric">
-  <input id="sname" placeholder="ชื่อ">
-  <input id="slevel" placeholder="ม." inputmode="numeric">
-  <input id="sroom" placeholder="ห้อง" inputmode="numeric">
-  <input type="file" accept="image/*" onchange="loadPhoto(event)">
-  <input type="file" accept="image/*" capture="camera" onchange="loadPhoto(event)">
-  <br><img id="preview" height="100"><br>
-  <button onclick="addStudent()">บันทึกนักเรียน</button>
-
-  <h4>เพิ่มครู</h4>
-  <input id="tname" placeholder="ชื่อครู">
-  <input id="tpass" placeholder="รหัส" inputmode="numeric">
-  <button onclick="addTeacher()">เพิ่มครู</button>
-
-  <h4>เพิ่มรายวิชา</h4>
-  <input id="subj">
-  <button onclick="addSubject()">เพิ่มวิชา</button>
-
-  <h4>📊 สรุปการมาเรียน (วันนี้)</h4>
-  ${Object.keys(db.subjects).map(subj=>{
-    return `
-    <b>วิชา ${subj}</b>
-    ${[1,2,3,4,5,6].map(l=>{
-      return [1,2,3,4,5].map(r=>{
-        let list=Object.entries(db.students)
-          .filter(([id,s])=>s.level==l&&s.room==r)
-        if(list.length==0)return""
-        return `
-        <div><u>ม.${l}/${r}</u>
-        <ul>
-        ${list.map(([id,s])=>{
-          let ok=db.attendance.find(a=>
-            a.sid==id&&a.sub==subj&&a.date==today
-          )
-          return `<li>${s.name} : ${ok?"✅ มา":"❌ ขาด"}</li>`
-        }).join("")}
-        </ul></div>
-        `
-      }).join("")
-    }).join("")}
-    `
-  }).join("")}
-  `
-}
-
-/* ===== เสริม ===== */
-let photoData=""
-function loadPhoto(e){
-  let r=new FileReader()
-  r.onload=()=>{photoData=r.result;preview.src=photoData}
-  r.readAsDataURL(e.target.files[0])
-}
-
-function addStudent(){
-  db.students[sid.value]={name:sname.value,level:slevel.value,room:sroom.value,photo:photoData}
-  save(); adminLogin()
-}
-function addTeacher(){db.teachers[tname.value]={pass:tpass.value};save();adminLogin()}
-function addSubject(){db.subjects[subj.value]=true;save();adminLogin()}
 </script>
 
 </body>
