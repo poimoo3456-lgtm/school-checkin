@@ -6,17 +6,18 @@
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"></script>
 <style>
-body{font-family:sans-serif;background:#f4f6f8;padding:20px}
+body{font-family:sans-serif;background:#eef2f5;padding:20px}
 .box{background:#fff;padding:15px;border-radius:10px;margin-bottom:15px}
 button{padding:6px 12px;margin:5px}
 input,select{padding:5px;margin:5px}
+img{border-radius:10px}
 .hidden{display:none}
 </style>
 </head>
 <body>
 
-<h2 id="schoolName">🏫 โรงเรียนตัวอย่าง</h2>
-<img id="schoolLogo" src="" height="60">
+<h2 id="schoolName">🏫 โรงเรียน</h2>
+<img id="schoolLogo" height="60">
 
 <div class="box">
 <button onclick="show('student')">นักเรียน</button>
@@ -58,36 +59,42 @@ let db = JSON.parse(localStorage.getItem("db")) || {
  subjects:{},
  attendance:[]
 }
-
 function save(){localStorage.setItem("db",JSON.stringify(db))}
+
+schoolName.innerText="🏫 "+db.school
+schoolLogo.src=db.logo
 
 function show(id){
 ["student","teacher","admin"].forEach(x=>document.getElementById(x).classList.add("hidden"))
 document.getElementById(id).classList.remove("hidden")
 }
 
-document.getElementById("schoolName").innerText="🏫 "+db.school
-document.getElementById("schoolLogo").src=db.logo
-
 /* นักเรียน */
 function studentLogin(){
-let id=stuId.value
-let s=db.students[id]
+let s=db.students[stuId.value]
 if(!s){alert("ไม่พบนักเรียน");return}
 stuArea.innerHTML=`
-<p>ชื่อ: ${s.name}</p>
+<img src="${s.photo||''}" height="120"><br>
+ชื่อ: ${s.name}<br>
+ชั้น: ม.${s.level}/${s.room}
 <div id="qrcode"></div>
 <h4>ประวัติ</h4>
-<ul>${db.attendance.filter(a=>a.sid==id).map(a=>`<li>${a.sub} : ${a.status}</li>`).join("")}</ul>`
-new QRCode(document.getElementById("qrcode"), id)
+<ul>
+${db.attendance.filter(a=>a.sid==stuId.value)
+.map(a=>`<li>${a.sub} | ม.${a.level}/${a.room} : ${a.status}</li>`).join("")}
+</ul>`
+new QRCode(document.getElementById("qrcode"), stuId.value)
 }
 
 /* ครู */
 function teacherLogin(){
 let t=db.teachers[tUser.value]
 if(!t||t.pass!=tPass.value){alert("เข้าไม่ได้");return}
+
 teacherArea.innerHTML=`
-<select id="sub">${Object.keys(db.subjects).map(s=>`<option>${s}</option>`)}</select>
+<select id="sub">${Object.keys(db.subjects).map(s=>`<option>${s}</option>`).join("")}</select>
+<select id="level"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+<select id="room"><option>1</option><option>2</option><option>3</option><option>4</option></select>
 <div id="reader" style="width:300px"></div>
 <button onclick="startScan()">เริ่มสแกน</button>
 <div id="result"></div>`
@@ -97,25 +104,33 @@ function startScan(){
 let qr=new Html5Qrcode("reader")
 qr.start({facingMode:"environment"},{fps:10},txt=>{
 qr.stop()
-let st=prompt("สถานะ: มา / สาย / ขาด / ลากิจ / ลาป่วย")
-db.attendance.push({sid:txt,sub:sub.value,status:st})
+let s=db.students[txt]
+if(!s||s.level!=level.value||s.room!=room.value){alert("นักเรียนไม่ตรงชั้น/ห้อง");return}
+let st=prompt("สถานะ: มา / มาสาย / ขาด / ลากิจ / ลาป่วย")
+db.attendance.push({sid:txt,sub:sub.value,level:level.value,room:room.value,status:st})
 save()
-result.innerHTML="บันทึกแล้ว"
+result.innerHTML="✔ บันทึกแล้ว"
 })
 }
 
 /* Admin */
 function adminLogin(){
 if(adminPass.value!="1669"){alert("รหัสผิด");return}
+
 adminArea.innerHTML=`
 <h4>ตั้งค่าโรงเรียน</h4>
 <input placeholder="ชื่อโรงเรียน" onchange="db.school=this.value;save();location.reload()">
-<input placeholder="ลิงก์โลโก้" onchange="db.logo=this.value;save();location.reload()">
+<input placeholder="โลโก้ URL" onchange="db.logo=this.value;save();location.reload()">
 
-<h4>เพิ่มนักเรียน</h4>
+<h4>เพิ่มนักเรียน (ถ่ายรูป)</h4>
 <input id="sid" placeholder="รหัส">
 <input id="sname" placeholder="ชื่อ">
-<button onclick="db.students[sid.value]={name:sname.value};save()">เพิ่ม</button>
+<input id="slevel" placeholder="ม.">
+<input id="sroom" placeholder="ห้อง">
+<input type="file" accept="image/*" capture="camera" onchange="loadPhoto(event)">
+<br>
+<img id="preview" height="120"><br>
+<button onclick="addStudent()">บันทึกนักเรียน</button>
 
 <h4>เพิ่มครู</h4>
 <input id="tname" placeholder="ชื่อครู">
@@ -126,6 +141,24 @@ adminArea.innerHTML=`
 <input id="subj">
 <button onclick="db.subjects[subj.value]=true;save()">เพิ่ม</button>
 `
+}
+
+let photoData=""
+function loadPhoto(e){
+let reader=new FileReader()
+reader.onload=()=>{photoData=reader.result;preview.src=photoData}
+reader.readAsDataURL(e.target.files[0])
+}
+
+function addStudent(){
+db.students[sid.value]={
+name:sname.value,
+level:slevel.value,
+room:sroom.value,
+photo:photoData
+}
+save()
+alert("เพิ่มนักเรียนเรียบร้อย")
 }
 </script>
 </body>
