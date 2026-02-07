@@ -2,255 +2,192 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<title>ระบบเช็คชื่อ QR ออนไลน์</title>
-
-<script src="https://unpkg.com/html5-qrcode"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"></script>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import {
-  getFirestore, doc, setDoc, getDoc, getDocs,
-  collection, addDoc
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-/* ===== FIREBASE ===== */
-const firebaseConfig = {
-  apiKey: "AIzaSyD19ffZKxxXfWj9sseK66LCCVEWqGNqPPI",
-  authDomain: "appsk-7f523.firebaseapp.com",
-  projectId: "appsk-7f523",
-  storageBucket: "appsk-7f523.appspot.com",
-  messagingSenderId: "543787580025",
-  appId: "1:543787580025:web:10772d30a3fdbf88afb2a8"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-/* ===== NAV ===== */
-window.show = id=>{
- ["student","teacher","scanTeacher","admin"].forEach(x=>{
-  document.getElementById(x).classList.add("hidden")
- })
- document.getElementById(id).classList.remove("hidden")
-}
-
-/* ===== STUDENT LOGIN ===== */
-window.studentLogin = async ()=>{
- let sid = stuId.value
- let snap = await getDoc(doc(db,"students",sid))
- if(!snap.exists()){ alert("ไม่พบนักเรียน"); return }
- let s = snap.data()
-
- stuArea.innerHTML=`
- <b>ชื่อ:</b> ${s.name}<br>
- <b>ชั้น:</b> ม.${s.level}/${s.room}
- <div id="qrcode"></div>
- `
- new QRCode(document.getElementById("qrcode"), sid)
-}
-
-/* ===== TEACHER LOGIN ===== */
-window.teacherLogin = async ()=>{
- let snap = await getDoc(doc(db,"teachers",tUser.value))
- if(!snap.exists() || snap.data().pass!=tPass.value){
-  alert("เข้าไม่ได้"); return
- }
-
- let subs = await getDocs(collection(db,"subjects"))
- let opts=""
- subs.forEach(d=>opts+=`<option>${d.id}</option>`)
-
- teacherArea.innerHTML=`
- <b>เข้าสู่ระบบแล้ว</b><br><br>
-
- วิชา:
- <select id="sub">${opts}</select>
- ชั้น:
- <select id="level">
-  <option>1</option><option>2</option><option>3</option>
-  <option>4</option><option>5</option><option>6</option>
- </select>
- ห้อง:
- <select id="room">
-  <option>1</option><option>2</option><option>3</option><option>4</option>
- </select>
-
- <h4>📷 สแกนนักเรียน</h4>
- <div id="reader" style="width:280px"></div>
- <button onclick="startScan()">เริ่มสแกน</button>
- <div id="result"></div>
-
- <hr>
- <h4>🆕 QR ให้นักเรียนสแกน (5 นาที)</h4>
- <button onclick="createTeacherQR()">สร้าง QR</button>
- <div id="teacherQR"></div>
- `
-}
-
-/* ===== SCAN STUDENT ===== */
-window.startScan = ()=>{
- let qr=new Html5Qrcode("reader")
- qr.start({facingMode:"environment"},{fps:10},async txt=>{
-  qr.stop()
-  let sSnap=await getDoc(doc(db,"students",txt))
-  if(!sSnap.exists()){alert("ไม่พบนักเรียน");return}
-  let s=sSnap.data()
-
-  await addDoc(collection(db,"attendance"),{
-    sid:txt,
-    name:s.name,
-    level:s.level,
-    room:s.room,
-    subject:sub.value,
-    status:"มา",
-    time:new Date().toLocaleString()
-  })
-
-  result.innerHTML=`✅ ${s.name} ม.${s.level}/${s.room} มาแล้ว`
- })
-}
-
-/* ===== CREATE TEACHER QR ===== */
-window.createTeacherQR = async ()=>{
- let expire = Date.now()+5*60*1000
- let ref = await addDoc(collection(db,"teacherQR"),{
-  subject:sub.value,
-  level:level.value,
-  room:room.value,
-  expireAt:expire
- })
- teacherQR.innerHTML=`
- <p>⏱ ใช้ได้ 5 นาที</p>
- <div id="qrTeacher"></div>
- `
- new QRCode(document.getElementById("qrTeacher"), ref.id)
-}
-
-/* ===== STUDENT SCAN TEACHER ===== */
-window.startScanTeacher = ()=>{
- let qr=new Html5Qrcode("reader2")
- qr.start({facingMode:"environment"},{fps:10},async txt=>{
-  qr.stop()
-  let snap=await getDoc(doc(db,"teacherQR",txt))
-  if(!snap.exists()){scanResult.innerHTML="❌ QR ไม่ถูกต้อง";return}
-  let d=snap.data()
-  let status="มา"
-
-  if(Date.now()>d.expireAt){
-   if(confirm("หมดเวลา ต้องการลงชื่อสายหรือไม่?")){
-    status="สาย"
-   }else return
-  }
-
-  await addDoc(collection(db,"attendance"),{
-    sid:stuId2.value,
-    subject:d.subject,
-    level:d.level,
-    room:d.room,
-    status,
-    time:new Date().toLocaleString()
-  })
-
-  scanResult.innerHTML=`✅ บันทึกแล้ว (${status})`
- })
-}
-
-/* ===== ADMIN ===== */
-window.adminLogin = ()=>{
- if(adminPass.value!="1669"){alert("รหัสผิด");return}
- adminArea.innerHTML=`
- <h4>เพิ่มนักเรียน</h4>
- <input id="sid" placeholder="รหัส" inputmode="numeric">
- <input id="sname" placeholder="ชื่อ">
- <input id="slevel" placeholder="ม." inputmode="numeric">
- <input id="sroom" placeholder="ห้อง" inputmode="numeric">
- <input type="file" accept="image/*" onchange="loadPhoto(event)">
- <img id="preview" height="80"><br>
- <button onclick="addStudent()">เพิ่มนักเรียน</button>
-
- <h4>เพิ่มครู</h4>
- <input id="tname" placeholder="ชื่อครู">
- <input id="tpass" placeholder="รหัส" inputmode="numeric">
- <button onclick="addTeacher()">เพิ่มครู</button>
-
- <h4>เพิ่มวิชา</h4>
- <input id="subj">
- <button onclick="addSubject()">เพิ่มวิชา</button>
- `
-}
-
-let photo=""
-window.loadPhoto=e=>{
- let r=new FileReader()
- r.onload=()=>{photo=r.result;preview.src=photo}
- r.readAsDataURL(e.target.files[0])
-}
-
-window.addStudent=async()=>{
- await setDoc(doc(db,"students",sid.value),{
-  name:sname.value,level:slevel.value,room:sroom.value,photo
- })
- alert("เพิ่มนักเรียนแล้ว")
-}
-window.addTeacher=async()=>{
- await setDoc(doc(db,"teachers",tname.value),{pass:tpass.value})
- alert("เพิ่มครูแล้ว")
-}
-window.addSubject=async()=>{
- await setDoc(doc(db,"subjects",subj.value),{})
- alert("เพิ่มวิชาแล้ว")
-}
-</script>
+<title>ระบบเช็คชื่อ QR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{font-family:sans-serif;background:#f3e8ff;padding:20px}
-.menu button{margin:5px;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px}
-.box{background:#fff;padding:15px;border-radius:10px;margin-top:10px}
+body{
+ font-family:sans-serif;
+ background:#f5f0ff;
+ color:#4b2e83;
+ margin:0;
+}
+header{
+ background:#6a0dad;
+ color:white;
+ padding:15px;
+ text-align:center;
+}
+section{padding:15px}
+.card{
+ background:white;
+ border-radius:12px;
+ padding:15px;
+ margin-bottom:15px;
+ box-shadow:0 2px 6px rgba(0,0,0,.1)
+}
+button{
+ background:#6a0dad;
+ color:white;
+ border:none;
+ padding:10px 15px;
+ border-radius:8px;
+ margin-top:5px;
+}
+input,select{
+ width:100%;
+ padding:8px;
+ margin-top:5px;
+}
 .hidden{display:none}
 </style>
 </head>
 
 <body>
 
-<h2>🏫 ระบบเช็คชื่อ QR ออนไลน์</h2>
+<header>📘 ระบบเช็คชื่อออนไลน์</header>
 
-<div class="menu">
- <button onclick="show('student')">นักเรียน</button>
- <button onclick="show('teacher')">ครู</button>
- <button onclick="show('scanTeacher')">สแกนครู</button>
- <button onclick="show('admin')">หลังบ้าน</button>
+<section class="card">
+<h3>🔐 เข้าระบบหลังบ้าน (PIN 1669)</h3>
+<input id="pin" placeholder="รหัส">
+<button onclick="login()">เข้า</button>
+</section>
+
+<section id="admin" class="hidden">
+
+<div class="card">
+<h3>➕ เพิ่มนักเรียน</h3>
+<input id="sname" placeholder="ชื่อนักเรียน">
+<input id="slevel" placeholder="ม.">
+<input id="sroom" placeholder="ห้อง">
+<input type="file" id="sphoto" accept="image/*">
+<button onclick="addStudent()">เพิ่มนักเรียน</button>
 </div>
 
-<div id="student" class="box hidden">
- <h3>นักเรียน</h3>
- <input id="stuId" placeholder="รหัสนักเรียน" inputmode="numeric">
- <button onclick="studentLogin()">เข้า</button>
- <div id="stuArea"></div>
+<div class="card">
+<h3>➕ เพิ่มครู</h3>
+<input id="tname" placeholder="ชื่อครู">
+<button onclick="addTeacher()">เพิ่มครู</button>
 </div>
 
-<div id="scanTeacher" class="box hidden">
- <h3>นักเรียนสแกนครู</h3>
- <input id="stuId2" placeholder="รหัสนักเรียน" inputmode="numeric">
- <div id="reader2" style="width:280px"></div>
- <button onclick="startScanTeacher()">เริ่มสแกน</button>
- <div id="scanResult"></div>
+<div class="card">
+<h3>➕ เพิ่มวิชา</h3>
+<input id="subname" placeholder="ชื่อวิชา">
+<button onclick="addSubject()">เพิ่มวิชา</button>
 </div>
 
-<div id="teacher" class="box hidden">
- <h3>ครู</h3>
- <input id="tUser" placeholder="ชื่อครู">
- <input id="tPass" placeholder="รหัสผ่าน" inputmode="numeric">
- <button onclick="teacherLogin()">เข้า</button>
- <div id="teacherArea"></div>
+<div class="card">
+<h3>📊 ประวัติการเข้าเรียน</h3>
+<ul id="history"></ul>
 </div>
 
-<div id="admin" class="box hidden">
- <h3>หลังบ้าน</h3>
- <input id="adminPass" placeholder="รหัสผ่าน" inputmode="numeric">
- <button onclick="adminLogin()">เข้า</button>
- <div id="adminArea"></div>
-</div>
+</section>
+
+<section class="card">
+<h3>👨‍🏫 ครูสร้าง QR</h3>
+<button onclick="createQR()">สร้าง QR (5 นาที)</button>
+<p id="qrtext"></p>
+</section>
+
+<section class="card">
+<h3>🎒 นักเรียนสแกน QR</h3>
+<input id="qrinput" placeholder="วางรหัส QR">
+<button onclick="scanQR()">เช็คชื่อ</button>
+</section>
+
+<script type="module">
+
+// 🔥 Firebase
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+ getFirestore, collection, addDoc, getDocs, query, where
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+ apiKey: "AIzaSyD19ffZKxxXfWj9sseK66LCCVEWqGNqPPI",
+ authDomain: "appsk-7f523.firebaseapp.com",
+ projectId: "appsk-7f523",
+ storageBucket: "appsk-7f523.appspot.com",
+ messagingSenderId: "543787580025",
+ appId: "1:543787580025:web:10772d30a3fdbf88afb2a8"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// 🔐 Login
+window.login = ()=>{
+ if(pin.value==="1669"){
+  admin.classList.remove("hidden")
+  alert("เข้าสู่ระบบแล้ว")
+ }else alert("รหัสผิด")
+}
+
+// ➕ Student
+window.addStudent = async()=>{
+ await addDoc(collection(db,"students"),{
+  name:sname.value,
+  level:slevel.value,
+  room:sroom.value,
+  photo:sphoto.files[0]?.name || ""
+ })
+ alert("เพิ่มนักเรียนแล้ว")
+}
+
+// ➕ Teacher
+window.addTeacher = async()=>{
+ await addDoc(collection(db,"teachers"),{name:tname.value})
+ alert("เพิ่มครูแล้ว")
+}
+
+// ➕ Subject
+window.addSubject = async()=>{
+ await addDoc(collection(db,"subjects"),{name:subname.value})
+ alert("เพิ่มวิชาแล้ว")
+}
+
+// 👨‍🏫 Create QR
+window.createQR = async()=>{
+ const expire = Date.now()+5*60*1000
+ const doc = await addDoc(collection(db,"qr_sessions"),{expire})
+ qrtext.innerText = "QR CODE: "+doc.id
+}
+
+// 🎒 Scan QR
+window.scanQR = async()=>{
+ const q = query(collection(db,"qr_sessions"), where("__name__","==",qrinput.value))
+ const snap = await getDocs(q)
+ if(snap.empty){alert("QR ไม่ถูกต้อง");return}
+
+ const data = snap.docs[0].data()
+ if(Date.now()>data.expire){
+  alert("สาย")
+  status="สาย"
+ }else{
+  alert("มาแล้ว")
+  status="มา"
+ }
+
+ await addDoc(collection(db,"attendance"),{
+  status,
+  time:new Date()
+ })
+ loadHistory()
+}
+
+// 📊 History
+async function loadHistory(){
+ history.innerHTML=""
+ const snap = await getDocs(collection(db,"attendance"))
+ snap.forEach(d=>{
+  const li=document.createElement("li")
+  li.textContent=`${d.data().status} - ${d.data().time.toDate()}`
+  history.appendChild(li)
+ })
+}
+loadHistory()
+
+</script>
 
 </body>
 </html>
